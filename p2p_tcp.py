@@ -5,7 +5,8 @@
 """
 import logging
 import argparse
-
+import time
+from time import strftime
 from src.node import P2PNode
 from src.utils import MultiLineFormatter
 
@@ -26,18 +27,25 @@ def handle_args():
         
     formatter = MultiLineFormatter(
     fmt='%(asctime)s %(levelname)-8s %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    datefmt='%H:%M:%S',
     )
 
     if args.log == True:
         logger = logging.getLogger()
-        logger.setLevel(logging.DEBUG)
-        log_handler= logging.FileHandler("logs/chord_log_%s.log" %(this_addr[0]+str(this_addr[1])), mode='w', encoding=None, delay=False)
+        log_handler= logging.FileHandler("logs/%s.log" %(strftime('%m-%d %I:%M %p', time.localtime())+str(this_addr[1])), mode='a', encoding=None, delay=False)
         log_handler.setFormatter(formatter)
+        log_handler.setLevel(logging.DEBUG)
         logger.addHandler(log_handler)
+        
+        con_handler= logging.StreamHandler()
+        con_handler.setFormatter(formatter)
+        con_handler.setLevel(logging.DEBUG)
+        logger.addHandler(con_handler)
+        
+        logger.setLevel(logging.DEBUG)
     else:
         logger = logging.getLogger()
-        logger.setLevel(logging.WARNING)
+        logger.setLevel(logging.INFO)
         log_handler= logging.StreamHandler()
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)

@@ -2,6 +2,7 @@ import socket, time
 import threading
 import hashlib
 import pickle
+import selectors
 
 from .utils import contain
 NUM_OF_BITS = 6
@@ -16,7 +17,9 @@ class P2PNode:
         self.addr = addr
         self.host_addr = host_addr
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind(addr)
+        self.socket.setblocking(False)
         self.socket.listen(5)
         self.id = self.hash(self.addr)
         self.finger_table = list(("",0) for i in range(NUM_OF_BITS))
@@ -25,25 +28,33 @@ class P2PNode:
         self.predecessor_id = -1
         self.successor_addr = self.addr
         self.successor_id = self.id
-        
+        self.socketlist=[self.socket]
         #self.data = {}
-        self.lock = threading.Lock()
+        #self.lock = threading.Lock()
+        #self.fin_lock = threading.Lock()
         self.alive = True
         
-        self.thread = threading.Thread(target=self.run, daemon=True)
-        self.thread.start()
-        self.join()
+        #self.thread = threading.Thread(target=self.run, daemon=True)
+        #self.thread.start()
         self.logger = logger
         """
         loop for stablize after few seconds, to update finger table, successor and predecessor after join or unjoin of other nodes
         """
-        threading.Thread(target=self.stabilize, daemon=True).start()
-        threading.Thread(target=self.fix_fingers, daemon=True).start()
-
+        # self.thread_s = threading.Thread(target=self.stabilize, daemon=True)
+        # self.thread_s.start()
+        # self.thread_f = threading.Thread(target=self.fix_fingers, daemon=True)
+        # self.thread_f.start()
+        selector = selectors.DefaultSelector()
+        selector.register(self.socket, selectors.EVENT_READ, self.accept_handler)
+        self.thread_s = threading.Thread(target=self.run, daemon=True)
+        self.thread_s.start()
+        self.join()
+        
         while self.alive:
-            time.sleep(10)
-        
-        
+            self.stabilize()
+            self.fix_fingers()
+            time.sleep(5)
+            
     def init_finger_table(self):
         """
         initialize finger table
@@ -61,12 +72,13 @@ class P2PNode:
         """
         thread for listening
         """
+        selector = selectors.DefaultSelector()
+        selector.register(self.socket, selectors.EVENT_READ, self.accept_handler)
         while self.alive:
-            conn, addr = self.socket.accept()
-            data = conn.recv(1024)
-            if data:
-                self._handle(data, conn)
-            conn.close()
+            for (key,mask) in selector.select():
+                key: selectors.SelectorKey
+                srv_sock, callback = key.fileobj, key.data
+                callback(srv_sock, selector)
     
     def join(self):
         """
@@ -85,45 +97,68 @@ class P2PNode:
         """
         stabilize the network
         """
-        while self.alive:
-            while(self.successor_addr != self.addr):
-                if self.successor_addr != self.addr:
-                    try:
-                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        sock.connect(self.successor_addr)
-                        sock.send(pickle.dumps(('get_predecessor', self.addr, self.id)))
-                        data = pickle.loads(sock.recv(1024))
-                        sock.close()
-                        if data[1] != -1 and contain(data[1], self.id, self.successor_id):
-                            self.successor_addr = data[0]
-                            self.successor_id = data[1]
-                        self._notify()
-                    except:
-                        """
-                        connect to next address in finger table
-                        """
-                        for i,addr in enumerate(self.finger_table):
-                            if (addr[0] != self.successor_addr):
-                                self.successor_addr = addr[0]
-                                self.successor_id = addr[1]
-                                for j in range(i):
-                                    self.finger_table[j] = self.finger_table[i]
-                                break
-                        self._notify_leave()
-                    time.sleep(5)
-            time.sleep(5)
-                       
+        if(self.successor_addr != self.addr):
+            message = "start stabilizing"
+            self.logger.debug(message)  
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect(self.successor_addr)
+                sock.send(pickle.dumps(('get_predecessor', self.addr, self.id)))
+                message = "---- wait for recv[get_predecessor] from {}".format(self.successor_addr)
+                self.logger.debug(message)
+                data = self.recv_data(sock)
+                if data==None:
+                    raise MyError
+                message = "received data from successor\n{}".format(data)
+                self.logger.debug(message) 
+                if data[1] != -1 and contain(data[1], self.id, self.successor_id):
+                    self.successor_addr = data[0]
+                    self.successor_id = data[1]
+                    message = "updated successor to\n{}".format(self.successor_addr)
+                    self.logger.debug(message) 
+                self._notify()
+                message = "notified me to successor"
+                self.logger.debug(message) 
+            except MyError:
+                self.logger.warning("error to stabilize(maybe deadlock)")
+            except:
+                """
+                connect to next address in finger table
+                """
+                message = "Node {} left".format(self.successor_addr)
+                self.logger.debug(message)
+                for i,addr in enumerate(self.finger_table):
+                    if (addr[0] != self.successor_addr):
+                        self.successor_addr = addr[0]
+                        self.successor_id = addr[1]
+                        for j in range(i):
+                            self.finger_table[j] = self.finger_table[i]
+                        break
+                    else:
+                        self.finger_table[i]= (self.predecessor_addr,self.predecessor_id)
+                if(self._notify_leave()==False):
+                    message = "error to notifying leave"
+                    self.logger.warning(message) 
+                    self.print_finger_table()   
+                # message = "ended stabilizing"
+                # self.logger.debug(message) 
+                #time.sleep(5)
+            message = "\nself id : %d || succ id : %d || pred id : %d" % (self.id, self.successor_id, self.predecessor_id)
+            self.logger.info(message)
+                   
     def fix_fingers(self):
         """
         fix fingers
         """
-        while self.alive:
-            while self.successor_addr != self.addr:
-                self._update_finger_table()
-                self.print_finger_table()
-                time.sleep(5)
-            time.sleep(5)   
-    
+        if self.successor_addr != self.addr:
+            message = "start fixing fingers"
+            self.logger.debug(message)  
+            self._update_finger_table()
+            self.print_finger_table()
+            #time.sleep(5)
+            message = "ended fixing fingers"
+            self.logger.debug(message) 
+ 
     def _find_successor(self, addr):
         """
         find successor of id, data sent by pickle
@@ -131,14 +166,19 @@ class P2PNode:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect(addr)
         sock.send(pickle.dumps(('find_successor', self.addr, self.id)))
-        data = pickle.loads(sock.recv(1024))
+        message = "---- wait for recv[find_successor] from {}".format(addr)
+        self.logger.debug(message)
+        try:
+            data=self.recv_data(sock)
+            if data==None:
+                raise MyError
+        except MyError:
+            self.logger.warning("error to find_successor(maybe deadlock)")
         """
         get successor address and id with mutex
         """
-        self.lock.acquire()
         self.successor_addr = data[0]
         self.successor_id = data[1]
-        self.lock.release()
         sock.close()
   
     def _notify(self):
@@ -179,16 +219,23 @@ class P2PNode:
         """
         find closest preceding finger
         """
-        
+        check=False
         for i in range(NUM_OF_BITS - 1, -1, -1):
+            
             if contain(self.finger_table[i][1], self.id, id):
-
+                check=True
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.connect(self.finger_table[i][0])
+                    self.logger.debug("sent find_successor_by_id to {}".format(self.finger_table[i][0]))
                     sock.send(pickle.dumps(('find_successor_by_id', self.addr, self.id, id)))
-                    data = pickle.loads(sock.recv(1024))
-                    sock.close()
+                    message = "---- wait for recv[find_successor_by_id] from {}".format(self.finger_table[i][0])
+                    self.logger.debug(message)
+                    data=self.recv_data(sock)
+                    if data==None:
+                        raise MyError
+                except MyError:
+                    self.logger.warning("error to find_closest_preceding_finger(maybe deadlock)")
                 except:
                     data = self.finger_table[(i+1)%NUM_OF_BITS]
                     
@@ -197,9 +244,23 @@ class P2PNode:
                 else:
                     return data
                 break
-            else:
-                continue
+        if check==False:
+            self.logger.warning("this is terrible situation")
     
+    def recv_data(self,sock):
+        """
+        receive data from other nodes
+        """
+        sock.settimeout(5)
+        for i in range (10): 
+            try:
+                data = pickle.loads(sock.recv(1024))
+            except TimeoutError:
+                data = None
+            if data!=None: break
+        sock.close()
+        return data
+
     ######################## for handle a request ########################
     
     def _handle(self, data, conn):
@@ -217,6 +278,8 @@ class P2PNode:
             self._handle_get_predecessor(data, conn)
         elif data[0] == 'find_successor_by_id':
             self._handle_find_successor_by_id(data, conn)
+        elif data[0] == 'hop_count':
+            self._handle_hop_count(data, conn)
        
     def _handle_find_successor(self, data, conn):
         """
@@ -224,18 +287,14 @@ class P2PNode:
         """
         if self.id == self.successor_id:
             conn.send(pickle.dumps((self.addr, self.id)))
-            self.lock.acquire()
             self.successor_addr = data[1]
             self.successor_id = data[2]
             self.finger_table[0] = (self.successor_addr, self.successor_id)
-            self.lock.release()
         elif contain(data[2], self.id, self.successor_id):
             conn.send(pickle.dumps((self.successor_addr, self.successor_id)))
-            self.lock.acquire()
             self.successor_addr = data[1]
             self.successor_id = data[2]
             self.finger_table[0] = (self.successor_addr, self.successor_id)
-            self.lock.release()        
         else:
             self._find_successor_by_id(data[2], conn)
      
@@ -244,29 +303,28 @@ class P2PNode:
         handle notify request
         """
         if self.predecessor_id == -1 or contain(data[2], self.predecessor_id, self.id):
-            self.lock.acquire()
             self.predecessor_addr = data[1]
             self.predecessor_id = data[2]
-            self.lock.release()
  
     def _notify_leave(self):
         """
         notify successor that node's predecessor has left
         """
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect(self.successor_addr)
-        sock.send(pickle.dumps(('notify_leave', self.addr, self.id)))
-        sock.close()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(self.successor_addr)
+            sock.send(pickle.dumps(('notify_leave', self.addr, self.id)))
+            sock.close()
+            return True
+        except:
+            return False
     
     def _handle_notify_leave(self, data):
         """
         handle notify_leave request
         """
-        self.lock.acquire()
         self.predecessor_addr = data[1]
         self.predecessor_id = data[2]
-        self.lock.release()
     
     def _handle_get_predecessor(self, data, conn):
         """
@@ -280,17 +338,56 @@ class P2PNode:
         """
         self._find_successor_by_id(data[3], conn)
 
+    # def _handle_hop_count(self, data, conn):
+    #     """
+    #     handle hop_count request
+    #     """
+    #     #time.sleep(5)
+    #     if(data[1] < 5):
+    #         for finger in set(self.finger_table):
+    #             if(finger[0] == self.addr):
+    #                 continue
+    #             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #             sock.connect(finger[0])
+    #             sock.send(pickle.dumps(('hop_count', data[1]+1,self.addr[1])))
+    #             sock.close()
+    #             message ="hop_count: from: "+str(data[2])+"::"+str(data[1])+"-> to: "+str(finger[0][1])+"::"+str(data[1]+1)
+    #             self.logger.info(message)
     
     ############################# for logging ############################
     def print_finger_table(self):
         """
         print finger table with ideal id
         """
-        message = "\nself id : %d || succ id : %d || pred id : %d" % (self.id, self.successor_id, self.predecessor_id)
-        message+="\n<finger table>"
+        message="\n<finger table>"
         
         for i,elem in enumerate(self.finger_table):
             id = (self.id + 2 ** i) % 2 ** NUM_OF_BITS
             message+="\n%2d | %s:%d (%2d)" % (id, elem[0][0], elem[0][1], elem[1])
         message+="\n"
         self.logger.info(message)
+
+    def accept_handler(self, sock: socket.socket, sel: selectors.BaseSelector):
+        """
+        accept connection from other nodes
+        """
+        conn: socket.socket
+        conn, addr = sock.accept()
+        sel.register(conn, selectors.EVENT_READ, self.read_handler)
+
+    def read_handler(self, conn: socket.socket, sel: selectors.BaseSelector):
+        """
+        read data from other nodes
+        """
+        message = "---- wait for recv[any other] from {}".format(conn.getpeername())
+        self.logger.debug(message)  
+        data = conn.recv(1024)
+        time.sleep(0.5)
+        self._handle(data, conn)
+        
+        sel.unregister(conn)
+        conn.close()
+        #print("close connection")
+        
+class MyError(Exception):
+    pass
