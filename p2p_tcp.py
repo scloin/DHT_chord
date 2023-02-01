@@ -32,20 +32,20 @@ def handle_args():
 
     if args.log == True:
         logger = logging.getLogger()
-        log_handler= logging.FileHandler("logs/%s.log" %(strftime('%m-%d %I:%M %p', time.localtime())+str(this_addr[1])), mode='a', encoding=None, delay=False)
+        log_handler= logging.FileHandler("logs/%s.log" %(str(this_addr[1])), mode='a', encoding=None, delay=False)
         log_handler.setFormatter(formatter)
-        log_handler.setLevel(logging.DEBUG)
+        log_handler.setLevel(logging.INFO)
         logger.addHandler(log_handler)
         
         con_handler= logging.StreamHandler()
         con_handler.setFormatter(formatter)
-        con_handler.setLevel(logging.DEBUG)
+        con_handler.setLevel(logging.CRITICAL)
         logger.addHandler(con_handler)
         
         logger.setLevel(logging.DEBUG)
     else:
         logger = logging.getLogger()
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.CRITICAL)
         log_handler= logging.StreamHandler()
         log_handler.setFormatter(formatter)
         logger.addHandler(log_handler)

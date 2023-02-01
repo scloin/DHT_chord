@@ -44,8 +44,8 @@ class P2PNode:
         # self.thread_s.start()
         # self.thread_f = threading.Thread(target=self.fix_fingers, daemon=True)
         # self.thread_f.start()
-        selector = selectors.DefaultSelector()
-        selector.register(self.socket, selectors.EVENT_READ, self.accept_handler)
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.socket, selectors.EVENT_READ, self.accept_handler)
         self.thread_s = threading.Thread(target=self.run, daemon=True)
         self.thread_s.start()
         self.join()
@@ -72,13 +72,13 @@ class P2PNode:
         """
         thread for listening
         """
-        selector = selectors.DefaultSelector()
-        selector.register(self.socket, selectors.EVENT_READ, self.accept_handler)
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.socket, selectors.EVENT_READ, self.accept_handler)
         while self.alive:
-            for (key,mask) in selector.select():
+            for (key,mask) in self.selector.select():
                 key: selectors.SelectorKey
                 srv_sock, callback = key.fileobj, key.data
-                callback(srv_sock, selector)
+                callback(srv_sock, self.selector)
     
     def join(self):
         """
