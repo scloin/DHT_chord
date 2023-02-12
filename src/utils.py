@@ -1,8 +1,10 @@
 import textwrap
 import logging
 import hashlib
+import subprocess
+import socket
 
-__all__ = ['contain', 'MultiLineFormatter', 'hash']
+__all__ = ['contain', 'MultiLineFormatter', 'hash', ]
 
 def contain(id, begin, end):
     """
@@ -29,6 +31,15 @@ def hash(addr, NUM_OF_BITS=6):
     """
     return int(hashlib.sha1(str(addr).encode()).hexdigest(), 16) % (2**NUM_OF_BITS)
 
+
+def get_global_ip():
+    """
+    get global ip address
+    """
+    return subprocess.check_output("wget http://ipecho.net/plain -O - -q ; echo", shell=True).decode().strip()
+
+def get_self_ip():
+    return socket.gethostbyname(socket.gethostname())
 
 if __name__ == '__main__':
     ip : str
