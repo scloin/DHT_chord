@@ -229,7 +229,7 @@ class P2PNode:
                 conn.send(pickle.dumps((self.successor_addr, self.successor_id)))
             else:
                 return (self.successor_addr, self.successor_id)
-        else:
+        else: 
             if conn:
                 self._find_closest_preceding_finger(id, conn)
             else:
