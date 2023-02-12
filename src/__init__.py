@@ -1,3 +1,3 @@
-from . import client, fednode, node, utils
+from . import fednode, node, utils
 
-__all__ = ['client', 'fednode', 'node', 'utils']
+__all__ = ['fednode', 'node', 'utils']
