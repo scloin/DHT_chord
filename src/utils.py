@@ -44,7 +44,7 @@ def get_self_ip():
 if __name__ == '__main__':
     ip : str
     #ip = input("ip")
-    ip = 'localhost'
+    ip = get_self_ip()
     port : int
     # port = input('port')
     slist = [0 for n in range(64)]

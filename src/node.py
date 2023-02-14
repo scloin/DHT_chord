@@ -4,7 +4,10 @@ import hashlib
 import pickle
 import selectors
 
-from . import utils
+try:
+    from . import utils
+except:
+    import utils
 NUM_OF_BITS = 6
 
 __all__ = ['P2PNode']
@@ -408,6 +411,7 @@ class P2PNode:
                 sock.send(pickle.dumps(('hop_count', data[1]+1,self.addr[1])))
                 sock.close()
                 message ="hop_count: from: "+str(data[2])+"::"+str(data[1])+"-> to: "+str(finger[0][1])+"::"+str(data[1]+1)
+                self.logger.warning(message)
                 print(message)
     ############################# for logging ############################
     def print_finger_table(self, level="info"):

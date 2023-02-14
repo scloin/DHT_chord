@@ -33,3 +33,7 @@ log/
 ehthumbs.db
 Icon?
 Thumbs.db
+data
+*.pyc
+__pycache__
+*.pth
