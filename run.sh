@@ -1,5 +1,5 @@
 home=/home/deepl/sooho/chord/DHT_chord
-python=/home/deepl/anaconda3/envs/pytorch/bin/python
+python=/home/deepl/anaconda3/envs/lah/bin/python
 
 
 #default value
@@ -10,7 +10,7 @@ addr='localhost'
 # str=$($python $home/test_chord.py 15)
 # echo $str
 
-str="12002 12008 12011 12013 12015 12024 12029 12032 12042 12057 12067 12070 12089 12174"
+str="12040 12145 12032 12002 12020 12006 12054 12180 12016 12010 12065 12039 12017 12057 12053"
 echo 12000 ready.. > logs/12000.log
 for var in $str
 do

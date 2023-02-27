@@ -8,7 +8,7 @@ try:
     from . import utils
 except:
     import utils
-NUM_OF_BITS = 6
+NUM_OF_BITS = 8
 
 __all__ = ['P2PNode']
 
@@ -60,12 +60,13 @@ class P2PNode:
         self.join()
         self.daemon_t.start()
         
-        while self.alive:
-            self.mainjob()
+        #while self.alive:
+        self.mainjob()
     
     def mainjob(self):
-        time.sleep(5)
-        pass
+        while self.alive:
+            time.sleep(5)
+        #pass
             
     def init_finger_table(self):
         """

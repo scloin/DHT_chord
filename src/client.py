@@ -2,7 +2,6 @@ import socket, pickle
 import hashlib
 
 __all__ = ['client']
-NUM_OF_BITS = 6
 
 class client:
     def __init__(self, addr=None):
